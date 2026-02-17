@@ -2,6 +2,7 @@ import os
 import shutil
 import time
 from typing import Dict
+from urllib import response
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -19,6 +20,7 @@ from core.auth import (
     verify_password, 
     get_password_hash
 )
+from core.rag_utils import query_vector_db
 
 load_dotenv()
 
@@ -175,3 +177,93 @@ async def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_cu
             raise HTTPException(status_code=500, detail=f"Model Error: {str(e)}")
 
     raise HTTPException(status_code=429, detail="All models are currently busy.")
+
+
+
+
+
+
+from fastapi import BackgroundTasks # Import this at the top
+from core.rag_utils import ingest_pdf_to_vector_db # Your helper
+
+@app.post("/rag-upload-pdf")
+async def upload_pdf(
+    background_tasks: BackgroundTasks, # Add this parameter
+    file: UploadFile = File(...), 
+    current_user: str = Depends(get_current_user) 
+):
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
+    # Use a unique name for the local copy
+    file_extension = file.filename.split(".")[-1]
+    local_filename = f"local_{current_user}_{int(time.time())}.{file_extension}"
+    local_path = f"/tmp/{local_filename}"
+
+    # 1. Save file locally first
+    with open(local_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    try:
+        # 2. Google Upload (for your existing /chat route)
+        google_file = client.files.upload(file=local_path)
+        user_files_db[current_user] = google_file
+        
+        # 3. RAG Ingestion (Run in background so user doesn't wait)
+        background_tasks.add_task(ingest_pdf_to_vector_db, local_path, current_user)
+        
+        return {
+            "message": "Upload successful. RAG indexing started in background.", 
+            "file_id": google_file.name
+        }
+    except Exception as e:
+        if os.path.exists(local_path):
+            os.remove(local_path)
+        raise HTTPException(status_code=500, detail=f"Upload Failed: {str(e)}")
+    
+    # Note: We don't delete local_path here yet because the background task needs it!
+    # You should delete it inside the background task after it's done.
+    
+    
+@app.post("/chat-rag")
+async def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_current_user)):
+    
+    # 1. Try to get context from our local RAG database
+    try:
+        context = query_vector_db(current_user, request.message)
+    except:
+        context = "" # No PDF uploaded or DB not found
+
+    # 2. Build the Prompt
+    if context:
+        prompt = f"""
+        You are a helpful assistant. Use the following pieces of retrieved context to answer the question. 
+        If you don't know the answer based on the context, say you don't know.
+        
+        CONTEXT:
+        {context}
+        
+        QUESTION: 
+        {request.message}
+        """
+    else:
+        prompt = request.message
+
+    # 3. Call Gemini
+    model_options = ["gemini-2.0-flash", "gemini-3-flash-preview"] 
+    response = None
+    for model_id in model_options:
+        try:
+            response = client.models.generate_content(
+                model=model_id,
+                contents=prompt
+            )
+            break  # If successful, break out of the loop
+        except Exception:
+            continue  # Try the next model if this one fails
+
+    if not response:
+        raise HTTPException(status_code=500, detail="Failed to generate response from any model.")
+
+    return {"bot": response.text, "source": "rag" if context else "general_knowledge"}
+    
