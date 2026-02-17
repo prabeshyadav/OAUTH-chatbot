@@ -251,6 +251,7 @@ async def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_cu
 
     # 3. Call Gemini
     model_options = ["gemini-2.0-flash", "gemini-3-flash-preview"] 
+    
     response = None
     for model_id in model_options:
         try:
