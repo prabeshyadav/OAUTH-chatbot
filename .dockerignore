@@ -1,5 +1,18 @@
-.env
+# Ignore the virtual environment (This is likely 150MB+)
+.venv/
+venv/
+env/
+
+# Ignore git history
+.git/
+
+# Ignore Python caches
 __pycache__/
-.venv
-.git
+*.pyc
+
+# Ignore your data files (PDFs, etc.)
 *.pdf
+data/
+
+# Ignore environment variables
+.env

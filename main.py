@@ -3,14 +3,24 @@ import shutil
 import time
 from typing import Dict
 from urllib import response
+from authlib.jose import jwt
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 from google import genai
+from fastapi import security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
 from google.genai import types 
 from dotenv import load_dotenv
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
+from core.authentik import get_current_user
+from core.authentik import oauth
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+from authlib.integrations.starlette_client import OAuth
+# from authlib.integrations.starlette_client import OIDCProvider
 
 # Assuming these are defined in your local files
 from core.google_auth import router as google_auth_router
@@ -24,6 +34,10 @@ from core.rag_utils import query_vector_db
 
 load_dotenv()
 
+JWKS_URL = "http://localhost:9000/application/o/django-app/jwks/"
+ISSUER = "http://localhost:9000/application/o/django-app/"
+AUDIENCE = "QJd2jL5P2DZ38xQ3e1nGDXtDzFfztYq6pAn1TKaE"
+
 # --- INITIALIZATION ---
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
@@ -32,6 +46,8 @@ if not GOOGLE_API_KEY:
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
 app = FastAPI(title="Simple Gemini Bot with Google Auth", root_path='/api')
+
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # Load System Prompt
 try:
@@ -55,7 +71,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=os.getenv("APP_SESSION_SECRET"), # Use your new generated secret
+    same_site="lax",
+    https_only=False # Set to True in production with SSL
+)
+# auth_user = OIDCProvider(
+#     # Change localhost to host.docker.internal
+#     configuration_uri="http://host.docker.internal:9000/application/o/fastapi-chatbot/.well-known/openid-configuration",
+#     client_id="d7fZWJYLI2tWD7p6BhpUa7IXN8iVFS12VRIbHI2D",
+# )
 app.include_router(google_auth_router)
 
 # --- DATABASES (Mock) ---
@@ -72,6 +98,8 @@ user_files_db: Dict[str, any] = {}
 class ChatRequest(BaseModel):
     message: str
 
+
+token_auth_scheme = HTTPBearer()
 # --- ROUTES ---
 
 @app.get("/health")
@@ -89,6 +117,48 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         )
     access_token = create_access_token(data={"sub": user["username"]})
     return {"access_token": access_token, "token_type": "bearer"}
+
+# @app.get("/login")
+# async def login(request: Request):
+#     redirect_uri = request.url_for("auth_callback")
+#     return await oauth.authentik.authorize_redirect(request, str(redirect_uri))
+
+# @app.get("/auth/callback")
+# async def auth_callback(request: Request):
+#     try:
+#         # This exchanges the code for the token bundle
+#         token = await oauth.authentik.authorize_access_token(request)
+        
+#         # Instead of a redirect, we return the token to the user
+#         return {
+#             "access_token": token.get("access_token"),
+#             "id_token": token.get("id_token"),
+#             "token_type": "Bearer",
+#             "expires_in": token.get("expires_in")
+#         }
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=f"Auth error: {str(e)}")
+
+# # --- TOKEN PROTECTION ---
+
+# async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+#     """
+#     This dependency reads the 'Authorization: Bearer <token>' header 
+#     and verifies it with Authentik.
+#     """
+#     token_str = credentials.credentials
+#     try:
+#         # Verify the token by calling Authentik's userinfo endpoint
+#         user_info = await oauth.authentik.userinfo(token={'access_token': token_str, 'token_type': 'Bearer'})
+#         return user_info
+#     except Exception:
+#         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# # 3. EXAMPLE PROTECTED ROUTE
+# @app.get("/me")
+# async def read_users_me(current_user: dict = Depends(get_current_user)):
+#     return {"user": current_user}
 
 @app.post("/upload-pdf")
 async def upload_pdf(
@@ -268,3 +338,26 @@ async def chat_endpoint(request: ChatRequest, current_user: str = Depends(get_cu
 
     return {"bot": response.text, "source": "rag" if context else "general_knowledge"}
     
+    
+    
+
+async def validate_token(res: HTTPAuthorizationCredentials = Depends(token_auth_scheme)):
+    token = res.credentials
+    try:
+        # Fetch public key from Authentik and verify
+        header = jwt.get_unverified_header(token)
+        # In production, use a library like 'jwks-client' to cache keys
+        payload = jwt.decode(token, options={"verify_signature": False}) 
+        
+        if payload["iss"] != ISSUER or payload["aud"] != AUDIENCE:
+             raise HTTPException(status_code=401, detail="Invalid token claims")
+        return payload
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    
+    
+@app.get("/fastapi-data")
+async def secure_data(user=Depends(validate_token)):
+    return {"message": f"Hello {user['email']}, FastAPI trusts your token!"}
+
+
