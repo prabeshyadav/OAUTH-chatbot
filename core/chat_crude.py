@@ -1,5 +1,6 @@
 from sqlmodel import Session, select
 from core.models import ChatMessage, UserFile
+from google.genai import types
 
 def get_chat_history(session: Session, username: str, limit: int = 20) -> list:
     messages = session.exec(
@@ -8,7 +9,14 @@ def get_chat_history(session: Session, username: str, limit: int = 20) -> list:
         .order_by(ChatMessage.created_at)
         .limit(limit)
     ).all()
-    return [{"role": m.role, "parts": [m.content]} for m in messages]
+    # Convert to Gemini types.Content format
+    return [
+        types.Content(
+            role=m.role,
+            parts=[types.Part(text=m.content)]
+        )
+        for m in messages
+    ]
 
 def save_message(session: Session, username: str, role: str, content: str):
     msg = ChatMessage(username=username, role=role, content=content)
@@ -30,6 +38,7 @@ def save_user_file(session: Session, username: str, google_file_id: str, filenam
     if existing:
         existing.google_file_id = google_file_id
         existing.original_filename = filename
+        session.add(existing)
     else:
         session.add(UserFile(username=username, google_file_id=google_file_id, original_filename=filename))
     session.commit()
