@@ -230,30 +230,41 @@ async def chat_endpoint(
     # --- PDF MODE ---
     if mode == "pdf":
         if not user_file:
-            raise HTTPException(status_code=400, detail="No PDF uploaded.")
-        google_file = client.files.get(name=user_file.google_file_id)
-        # PDF mode: file + history + new question
-        contents = [google_file] + history + [
-            types.Content(
-                role="user",
-                parts=[types.Part(text=f"Answer using the PDF only. Question: {request.message}")]
-            )
-        ]
-        bot_reply, model_used = call_gemini(contents)
+            mode = "chat"
+        else:
+            try:
+                google_file = client.files.get(name=user_file.google_file_id)
+                prompt_text = (
+                    f"You have access to the user's uploaded document ({user_file.original_filename}). "
+                    f"If the question relates to the document, use the PDF content to provide an accurate answer. "
+                    f"If the question is a general greeting, general knowledge query, or conversational prompt, "
+                    f"respond naturally and conversationally.\n\nUser Question: {request.message}"
+                )
+                contents = [google_file] + history + [
+                    types.Content(
+                        role="user",
+                        parts=[types.Part(text=prompt_text)]
+                    )
+                ]
+                bot_reply, model_used = call_gemini(contents)
+            except Exception:
+                mode = "chat"
 
     # --- RAG MODE ---
-    elif mode == "rag":
+    if mode == "rag":
         try:
             context = query_vector_db(current_user, request.message)
         except Exception:
             context = ""
 
-        prompt = f"""Use the context below to answer. If not in context, say you don't know.
-
-CONTEXT:
-{context}
-
-QUESTION: {request.message}""" if context else request.message
+        if context:
+            prompt = (
+                f"Context from uploaded document:\n{context}\n\n"
+                f"Use the context if relevant to answer. If general question, answer naturally.\n"
+                f"QUESTION: {request.message}"
+            )
+        else:
+            prompt = request.message
 
         contents = history + [
             types.Content(role="user", parts=[types.Part(text=prompt)])
@@ -261,7 +272,7 @@ QUESTION: {request.message}""" if context else request.message
         bot_reply, model_used = call_gemini(contents)
 
     # --- CHAT MODE ---
-    else:
+    if mode == "chat":
         contents = history + [
             types.Content(role="user", parts=[types.Part(text=request.message)])
         ]
