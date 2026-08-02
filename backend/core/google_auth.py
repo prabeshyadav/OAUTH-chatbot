@@ -1,5 +1,6 @@
 import os
 from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import RedirectResponse
 from authlib.integrations.starlette_client import OAuth
 from core.auth import create_access_token # Import your JWT creator
 from dotenv import load_dotenv
@@ -22,7 +23,8 @@ oauth.register(
 
 @router.get("/login")
 async def login_google(request: Request):
-    redirect_uri = "http://localhost:8000/auth/callback"  # exactly what you registered in Google
+    # Allow overriding redirect URI via environment variable if needed
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback")
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 @router.get("/callback", name="auth_callback")
@@ -37,11 +39,13 @@ async def auth_callback(request: Request):
         email = user_info['email']
         access_token = create_access_token(data={"sub": email})
         
-        return {"access_token": access_token, "token_type": "bearer"}
+        # Redirect back to frontend UI with access_token URL parameter
+        return RedirectResponse(url=f"/?access_token={access_token}")
         
     except Exception as e:
         print(f"Detailed Auth Error: {str(e)}")
         raise HTTPException(
             status_code=400, 
             detail=f"Authentication failed: {str(e)}"
-        )  
+        )
+  

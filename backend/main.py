@@ -4,6 +4,8 @@ import time
 from typing import Optional
 from authlib.jose import jwt
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, status, BackgroundTasks
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
@@ -40,7 +42,7 @@ if not GOOGLE_API_KEY:
 
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
-app = FastAPI(title="Gemini Chatbot", root_path='/api')
+app = FastAPI(title="Gemini Chatbot")
 
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
@@ -178,6 +180,21 @@ async def upload_pdf(
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
+@app.get("/upload-pdf")
+async def get_pdf_status(
+    current_user: str = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    user_file = get_user_file(session, current_user)
+    if not user_file:
+        return {"has_file": False, "filename": None}
+    return {
+        "has_file": True,
+        "filename": user_file.original_filename,
+        "file_id": user_file.google_file_id,
+        "uploaded_at": user_file.uploaded_at.isoformat() if user_file.uploaded_at else None
+    }
+
 @app.delete("/upload-pdf")
 async def delete_pdf(
     current_user: str = Depends(get_current_user),
@@ -295,3 +312,5 @@ async def validate_token(res: HTTPAuthorizationCredentials = Depends(token_auth_
 @app.get("/fastapi-data")
 async def secure_data(user=Depends(validate_token)):
     return {"message": f"Hello {user['email']}, FastAPI trusts your token!"}
+
+
