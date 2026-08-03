@@ -8,8 +8,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # Initialize the embedding model
 embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
+def get_persist_dir(user_id: str) -> str:
+    base_dir = os.getenv("CHROMA_DATA_DIR", ".")
+    return os.path.join(base_dir, f"chroma_db_{user_id}")
+
 def ingest_pdf_to_vector_db(file_path: str, user_id: str):
-    persist_dir = f"./chroma_db_{user_id}"
+    persist_dir = get_persist_dir(user_id)
     
     # 1. DELETE OLD DATA: Ensures the bot only knows about the LATEST PDF
     if os.path.exists(persist_dir):
@@ -36,7 +40,7 @@ def ingest_pdf_to_vector_db(file_path: str, user_id: str):
     return vectorstore
 
 def query_vector_db(user_id: str, question: str):
-    persist_dir = f"./chroma_db_{user_id}"
+    persist_dir = get_persist_dir(user_id)
 
     # Check if the database directory actually exists before trying to load it
     if not os.path.exists(persist_dir):

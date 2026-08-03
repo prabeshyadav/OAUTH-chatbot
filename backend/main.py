@@ -60,13 +60,24 @@ app.add_middleware(
     same_site="lax",
     https_only=False
 )
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://localhost:80"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+cors_origins_raw = os.getenv("CORS_ORIGINS", "*")
+if cors_origins_raw.strip() == "*":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    allowed_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(google_auth_router)
 

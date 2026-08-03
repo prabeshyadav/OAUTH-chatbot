@@ -2,6 +2,8 @@
  * Centralized API Client for NexusAI Backend
  */
 
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
 const getAuthHeader = () => {
     const token = localStorage.getItem('nexus_access_token');
     return token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -12,7 +14,7 @@ export async function loginWithPassword(username, password) {
     formData.append('username', username);
     formData.append('password', password);
 
-    const response = await fetch('/token', {
+    const response = await fetch(`${API_BASE}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
@@ -27,7 +29,7 @@ export async function loginWithPassword(username, password) {
 }
 
 export async function fetchChatHistory() {
-    const response = await fetch('/chat/history', {
+    const response = await fetch(`${API_BASE}/chat/history`, {
         headers: getAuthHeader()
     });
     if (!response.ok) throw new Error('Failed to fetch history');
@@ -35,7 +37,7 @@ export async function fetchChatHistory() {
 }
 
 export async function clearChatHistory() {
-    const response = await fetch('/chat/history', {
+    const response = await fetch(`${API_BASE}/chat/history`, {
         method: 'DELETE',
         headers: getAuthHeader()
     });
@@ -44,7 +46,7 @@ export async function clearChatHistory() {
 }
 
 export async function sendChatMessage(message, mode = 'auto') {
-    const response = await fetch('/chat', {
+    const response = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -65,7 +67,7 @@ export async function uploadPdfFile(file) {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch('/upload-pdf', {
+    const response = await fetch(`${API_BASE}/upload-pdf`, {
         method: 'POST',
         headers: getAuthHeader(),
         body: formData
@@ -80,7 +82,7 @@ export async function uploadPdfFile(file) {
 }
 
 export async function deletePdfFile() {
-    const response = await fetch('/upload-pdf', {
+    const response = await fetch(`${API_BASE}/upload-pdf`, {
         method: 'DELETE',
         headers: getAuthHeader()
     });
@@ -89,7 +91,7 @@ export async function deletePdfFile() {
 }
 
 export async function fetchPdfStatus() {
-    const response = await fetch('/upload-pdf', {
+    const response = await fetch(`${API_BASE}/upload-pdf`, {
         headers: getAuthHeader()
     });
     if (!response.ok) return { has_file: false };

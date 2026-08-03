@@ -40,7 +40,9 @@ async def auth_callback(request: Request):
         access_token = create_access_token(data={"sub": email})
         
         # Redirect back to frontend UI with access_token URL parameter
-        return RedirectResponse(url=f"/?access_token={access_token}")
+        frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
+        redirect_target = f"{frontend_url}/?access_token={access_token}" if frontend_url else f"/?access_token={access_token}"
+        return RedirectResponse(url=redirect_target)
         
     except Exception as e:
         print(f"Detailed Auth Error: {str(e)}")
