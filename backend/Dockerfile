@@ -5,8 +5,13 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies if any of your python libs need to compile code
-# RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
+# Install system build dependencies for native C/C++ packages (chromadb, hnswlib, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 
