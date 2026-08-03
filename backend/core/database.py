@@ -11,7 +11,18 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 engine = create_engine(DATABASE_URL, echo=False)
 
 def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            SQLModel.metadata.create_all(engine)
+            print("Database connected and tables verified.")
+            return
+        except Exception as e:
+            print(f"Database connection attempt {attempt + 1}/{max_retries} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2)
+            else:
+                print("Warning: Could not connect to Database on startup. Server will continue.")
 
 def get_session():
     with Session(engine) as session:
