@@ -14,9 +14,8 @@ from google.genai import types
 from dotenv import load_dotenv
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
-from sqlmodel import Session
-from core.database import get_session
-from core.database import create_db_and_tables
+from sqlmodel import Session, select
+from core.database import get_session, create_db_and_tables
 from core.chat_crude import get_chat_history, save_message, clear_history, save_user_file, get_user_file
 from core.google_auth import router as google_auth_router
 from core.auth import (
@@ -25,9 +24,8 @@ from core.auth import (
     verify_password,
     get_password_hash
 )
-from core.database import create_db_and_tables, get_session
-
-from core.rag_utils import query_vector_db, ingest_pdf_to_vector_db
+from core.models import UserFile
+from core.rag_utils import query_vector_db
 
 load_dotenv()
 
@@ -157,7 +155,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @app.post("/upload-pdf")
 async def upload_pdf(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: str = Depends(get_current_user),
     session: Session = Depends(get_session)
@@ -217,9 +214,7 @@ async def delete_pdf(
     user_file = get_user_file(session, current_user)
     if not user_file:
         raise HTTPException(status_code=404, detail="No PDF found for this user")
-    from core.models import UserFile
-    from sqlmodel import select
-    from core.models import UserFile
+    
     db_file = session.exec(
         select(UserFile).where(UserFile.username == current_user)
     ).first()
