@@ -165,7 +165,8 @@ async def upload_pdf(
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
-    local_path = f"/tmp/{current_user}_{int(time.time())}.pdf"
+    os.makedirs("/app/tmp", exist_ok=True)
+    local_path = f"/app/tmp/{current_user}_{int(time.time())}.pdf"
 
     with open(local_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -177,11 +178,13 @@ async def upload_pdf(
         # Save file reference to PostgreSQL
         save_user_file(session, current_user, google_file.name, file.filename)
 
-        # Index into RAG vector DB in background
-        background_tasks.add_task(ingest_pdf_to_vector_db, local_path, current_user)
+        # Offload RAG vector DB indexing to Celery worker via Redis
+        from core.celery_app import ingest_pdf_task
+        task = ingest_pdf_task.delay(local_path, current_user)
 
         return {
-            "message": "PDF uploaded. RAG indexing started in background.",
+            "message": "PDF uploaded. RAG indexing started asynchronously via Celery.",
+            "task_id": task.id,
             "file_id": google_file.name,
             "tip": "Use mode='pdf' for direct PDF chat, mode='rag' for vector search"
         }
@@ -283,7 +286,7 @@ async def chat_endpoint(
         bot_reply, model_used = call_gemini(contents)
 
     # --- CHAT MODE ---
-    if mode == "chat":
+    elif mode == "chat":
         contents = history + [
             types.Content(role="user", parts=[types.Part(text=request.message)])
         ]

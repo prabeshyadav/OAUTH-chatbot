@@ -9,7 +9,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
 def get_persist_dir(user_id: str) -> str:
-    base_dir = os.getenv("CHROMA_DATA_DIR", ".")
+    base_dir = os.getenv("CHROMA_DATA_DIR", "/app/chroma_data")
+    os.makedirs(base_dir, exist_ok=True)
     return os.path.join(base_dir, f"chroma_db_{user_id}")
 
 def ingest_pdf_to_vector_db(file_path: str, user_id: str):
