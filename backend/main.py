@@ -163,8 +163,9 @@ async def upload_pdf(
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
-    os.makedirs("/app/tmp", exist_ok=True)
-    local_path = f"/app/tmp/{current_user}_{int(time.time())}.pdf"
+    tmp_dir = os.getenv("TMPDIR", "/tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    local_path = os.path.join(tmp_dir, f"{current_user}_{int(time.time())}.pdf")
 
     with open(local_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)

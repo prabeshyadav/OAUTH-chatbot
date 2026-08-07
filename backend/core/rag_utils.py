@@ -5,8 +5,11 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# Initialize the embedding model
-embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+def get_embeddings():
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY is missing from environment variables.")
+    return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
 
 def get_persist_dir(user_id: str) -> str:
     base_dir = os.getenv("CHROMA_DATA_DIR", "/app/chroma_data")
@@ -30,7 +33,7 @@ def ingest_pdf_to_vector_db(file_path: str, user_id: str):
     # 3. Create a fresh Vector Store
     vectorstore = Chroma.from_documents(
         documents=splits, 
-        embedding=embeddings,
+        embedding=get_embeddings(),
         persist_directory=persist_dir
     )
     
@@ -50,7 +53,7 @@ def query_vector_db(user_id: str, question: str):
     # Load the existing DB
     vectorstore = Chroma(
         persist_directory=persist_dir,
-        embedding_function=embeddings
+        embedding_function=get_embeddings()
     )
 
     # Search for the top 3 most relevant chunks
