@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy import create_engine as sa_engine
 import os
+import time
 
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL", "postgresql://postgres:postgres@db:5432/chatbot_db")
 
@@ -8,7 +9,12 @@ DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PRIVATE_URL", "p
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=300
+)
 
 def create_db_and_tables():
     max_retries = 5
