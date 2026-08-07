@@ -35,10 +35,11 @@ AUDIENCE = "QJd2jL5P2DZ38xQ3e1nGDXtDzFfztYq6pAn1TKaE"
 
 # --- INITIALIZATION ---
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    raise ValueError("GOOGLE_API_KEY not found in environment variables")
-
-client = genai.Client(api_key=GOOGLE_API_KEY)
+if GOOGLE_API_KEY:
+    client = genai.Client(api_key=GOOGLE_API_KEY)
+else:
+    print("Warning: GOOGLE_API_KEY not found in environment variables. Gemini features will require key setup.")
+    client = None
 
 app = FastAPI(title="Gemini Chatbot")
 
@@ -169,25 +170,40 @@ async def upload_pdf(
         shutil.copyfileobj(file.file, buffer)
 
     try:
+        if not client:
+            raise Exception("GOOGLE_API_KEY is not configured on the server.")
+
         # Upload to Gemini for direct PDF chat
         google_file = client.files.upload(file=local_path)
 
         # Save file reference to PostgreSQL
         save_user_file(session, current_user, google_file.name, file.filename)
 
-        # Offload RAG vector DB indexing to Celery worker via Redis
-        from core.celery_app import ingest_pdf_task
-        task = ingest_pdf_task.delay(local_path, current_user)
+        # Offload RAG vector DB indexing to Celery worker via Redis (with graceful fallback)
+        task_id = None
+        try:
+            from core.celery_app import ingest_pdf_task
+            task = ingest_pdf_task.delay(local_path, current_user)
+            task_id = task.id
+        except Exception as celery_err:
+            print(f"Celery dispatch skipped/failed: {celery_err}")
+            # Fallback to direct ingestion if Redis/Celery is not deployed/connected
+            try:
+                from core.rag_utils import ingest_pdf_to_vector_db
+                ingest_pdf_to_vector_db(local_path, current_user)
+            except Exception as rag_err:
+                print(f"Direct RAG ingestion failed: {rag_err}")
 
         return {
-            "message": "PDF uploaded. RAG indexing started asynchronously via Celery.",
-            "task_id": task.id,
+            "message": "PDF uploaded successfully.",
+            "task_id": task_id,
             "file_id": google_file.name,
             "tip": "Use mode='pdf' for direct PDF chat, mode='rag' for vector search"
         }
     except Exception as e:
         if os.path.exists(local_path):
             os.remove(local_path)
+        print(f"Upload error traceback: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
